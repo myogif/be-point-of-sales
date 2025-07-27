@@ -16,6 +16,23 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Test Supabase connection on startup
+import { supabase } from './services/supabaseClient.js';
+
+// Test connection
+(async () => {
+  try {
+    const { data, error } = await supabase.from('categories').select('count').limit(1);
+    if (error) {
+      console.error('Supabase connection error:', error);
+    } else {
+      console.log('✅ Supabase connection successful');
+    }
+  } catch (err) {
+    console.error('❌ Supabase connection failed:', err.message);
+  }
+})();
+
 // Middleware
 // app.use(cors({
 //   origin: ['http://localhost:5173', 'http://localhost:3000'],

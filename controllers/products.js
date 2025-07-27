@@ -110,27 +110,51 @@ export const getProductByBarcode = async (req, res) => {
 
 export const createProduct = async (req, res) => {
   try {
+    console.log('Creating product with data:', req.body);
     const productData = req.body;
     
     // Validate required fields
     if (!productData.name || !productData.name.trim()) {
+      console.log('Validation failed: Product name is required');
       return res.status(400).json({ error: 'Product name is required' });
     }
     
     if (!productData.category_id) {
+      console.log('Validation failed: Category is required');
       return res.status(400).json({ error: 'Category is required' });
     }
     
     if (!productData.unit_type) {
+      console.log('Validation failed: Unit type is required');
       return res.status(400).json({ error: 'Unit type is required' });
     }
     
     // Validate that the price for the selected unit type is provided
     const priceField = `price_${productData.unit_type}`;
     if (!productData[priceField] || productData[priceField] <= 0) {
+      console.log(`Validation failed: Valid price for ${productData.unit_type} is required`);
       return res.status(400).json({ error: `Valid price for ${productData.unit_type} is required` });
     }
+
+    // Validate numeric field limits (precision 10, scale 2 = max 99,999,999.99)
+    const maxValue = 99999999.99;
+    const priceFields = ['price_kg', 'price_ons', 'price_pcs', 'price_liter'];
     
+    for (const field of priceFields) {
+      if (productData[field] && productData[field] > maxValue) {
+        console.log(`Validation failed: ${field} exceeds maximum value`);
+        return res.status(400).json({
+          error: `${field.replace('price_', '').toUpperCase()} price cannot exceed ${maxValue.toLocaleString()}`
+        });
+      }
+    }
+
+    if (productData.stock && productData.stock > maxValue) {
+      console.log('Validation failed: Stock exceeds maximum value');
+      return res.status(400).json({ error: `Stock cannot exceed ${maxValue.toLocaleString()}` });
+    }
+    
+    console.log('Inserting product into Supabase...');
     const { data: product, error } = await supabase
       .from('products')
       .insert([productData])
@@ -144,11 +168,21 @@ export const createProduct = async (req, res) => {
       `)
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('Supabase error:', error);
+      throw error;
+    }
 
+    console.log('Product created successfully:', product);
     res.status(201).json(product);
   } catch (error) {
     console.error('Error creating product:', error);
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint
+    });
     
     // Handle duplicate barcode error
     if (error.code === '23505' && error.details && error.details.includes('barcode')) {
@@ -165,8 +199,16 @@ export const createProduct = async (req, res) => {
         code: 'INVALID_CATEGORY'
       });
     }
+
+    // Handle numeric field overflow error
+    if (error.code === '22003') {
+      return res.status(400).json({
+        error: 'One or more numeric values exceed the maximum allowed limit (99,999,999.99)',
+        code: 'NUMERIC_OVERFLOW'
+      });
+    }
     
-    res.status(500).json({ error: 'Failed to create product' });
+    res.status(500).json({ error: 'Failed to create product', details: error.message });
   }
 };
 
@@ -186,6 +228,22 @@ export const updateProduct = async (req, res) => {
       if (!productData[priceField] || productData[priceField] <= 0) {
         return res.status(400).json({ error: `Valid price for ${productData.unit_type} is required` });
       }
+    }
+
+    // Validate numeric field limits (precision 10, scale 2 = max 99,999,999.99)
+    const maxValue = 99999999.99;
+    const priceFields = ['price_kg', 'price_ons', 'price_pcs', 'price_liter'];
+    
+    for (const field of priceFields) {
+      if (productData[field] !== undefined && productData[field] > maxValue) {
+        return res.status(400).json({
+          error: `${field.replace('price_', '').toUpperCase()} price cannot exceed ${maxValue.toLocaleString()}`
+        });
+      }
+    }
+
+    if (productData.stock !== undefined && productData.stock > maxValue) {
+      return res.status(400).json({ error: `Stock cannot exceed ${maxValue.toLocaleString()}` });
     }
     
     const { data: product, error } = await supabase
@@ -225,6 +283,14 @@ export const updateProduct = async (req, res) => {
       return res.status(400).json({
         error: 'Invalid category selected',
         code: 'INVALID_CATEGORY'
+      });
+    }
+
+    // Handle numeric field overflow error
+    if (error.code === '22003') {
+      return res.status(400).json({
+        error: 'One or more numeric values exceed the maximum allowed limit (99,999,999.99)',
+        code: 'NUMERIC_OVERFLOW'
       });
     }
     
