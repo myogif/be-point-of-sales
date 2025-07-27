@@ -15,6 +15,7 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const HOST = process.env.HOST || '0.0.0.0'; // Allow connections from any IP
 
 // Test Supabase connection on startup
 import { supabase } from './services/supabaseClient.js';

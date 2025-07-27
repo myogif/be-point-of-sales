@@ -79,6 +79,19 @@ export const deleteCategory = async (req, res) => {
   try {
     const { id } = req.params;
     
+    // First check if category exists
+    const { data: existingCategory, error: checkError } = await supabase
+      .from('categories')
+      .select('id')
+      .eq('id', id)
+      .single();
+
+    if (checkError && checkError.code === 'PGRST116') {
+      return res.status(404).json({ error: 'Category not found' });
+    }
+
+    if (checkError) throw checkError;
+
     const { error } = await supabase
       .from('categories')
       .delete()
@@ -89,6 +102,15 @@ export const deleteCategory = async (req, res) => {
     res.json({ message: 'Category deleted successfully' });
   } catch (error) {
     console.error('Error deleting category:', error);
+    
+    // Handle foreign key constraint error (category is referenced by products)
+    if (error.code === '23503') {
+      return res.status(409).json({
+        error: 'Cannot delete category as it is being used by products',
+        code: 'CATEGORY_IN_USE'
+      });
+    }
+    
     res.status(500).json({ error: 'Failed to delete category' });
   }
 };
