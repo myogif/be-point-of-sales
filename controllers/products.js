@@ -112,6 +112,25 @@ export const createProduct = async (req, res) => {
   try {
     const productData = req.body;
     
+    // Validate required fields
+    if (!productData.name || !productData.name.trim()) {
+      return res.status(400).json({ error: 'Product name is required' });
+    }
+    
+    if (!productData.category_id) {
+      return res.status(400).json({ error: 'Category is required' });
+    }
+    
+    if (!productData.unit_type) {
+      return res.status(400).json({ error: 'Unit type is required' });
+    }
+    
+    // Validate that the price for the selected unit type is provided
+    const priceField = `price_${productData.unit_type}`;
+    if (!productData[priceField] || productData[priceField] <= 0) {
+      return res.status(400).json({ error: `Valid price for ${productData.unit_type} is required` });
+    }
+    
     const { data: product, error } = await supabase
       .from('products')
       .insert([productData])
@@ -133,9 +152,17 @@ export const createProduct = async (req, res) => {
     
     // Handle duplicate barcode error
     if (error.code === '23505' && error.details && error.details.includes('barcode')) {
-      return res.status(409).json({ 
+      return res.status(409).json({
         error: 'Product with this barcode already exists',
         code: 'DUPLICATE_BARCODE'
+      });
+    }
+    
+    // Handle foreign key constraint error (invalid category_id)
+    if (error.code === '23503' && error.details && error.details.includes('category_id')) {
+      return res.status(400).json({
+        error: 'Invalid category selected',
+        code: 'INVALID_CATEGORY'
       });
     }
     
@@ -147,6 +174,19 @@ export const updateProduct = async (req, res) => {
   try {
     const { id } = req.params;
     const productData = req.body;
+    
+    // Validate required fields if they are being updated
+    if (productData.name !== undefined && (!productData.name || !productData.name.trim())) {
+      return res.status(400).json({ error: 'Product name cannot be empty' });
+    }
+    
+    // If unit_type is being updated, validate the corresponding price
+    if (productData.unit_type !== undefined) {
+      const priceField = `price_${productData.unit_type}`;
+      if (!productData[priceField] || productData[priceField] <= 0) {
+        return res.status(400).json({ error: `Valid price for ${productData.unit_type} is required` });
+      }
+    }
     
     const { data: product, error } = await supabase
       .from('products')
@@ -174,9 +214,17 @@ export const updateProduct = async (req, res) => {
     
     // Handle duplicate barcode error
     if (error.code === '23505' && error.details && error.details.includes('barcode')) {
-      return res.status(409).json({ 
+      return res.status(409).json({
         error: 'Product with this barcode already exists',
         code: 'DUPLICATE_BARCODE'
+      });
+    }
+    
+    // Handle foreign key constraint error (invalid category_id)
+    if (error.code === '23503' && error.details && error.details.includes('category_id')) {
+      return res.status(400).json({
+        error: 'Invalid category selected',
+        code: 'INVALID_CATEGORY'
       });
     }
     
@@ -188,6 +236,19 @@ export const deleteProduct = async (req, res) => {
   try {
     const { id } = req.params;
     
+    // First check if product exists
+    const { data: existingProduct, error: checkError } = await supabase
+      .from('products')
+      .select('id')
+      .eq('id', id)
+      .single();
+
+    if (checkError && checkError.code === 'PGRST116') {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    if (checkError) throw checkError;
+
     const { error } = await supabase
       .from('products')
       .delete()
@@ -198,6 +259,15 @@ export const deleteProduct = async (req, res) => {
     res.json({ message: 'Product deleted successfully' });
   } catch (error) {
     console.error('Error deleting product:', error);
+    
+    // Handle foreign key constraint error (product is referenced in sales)
+    if (error.code === '23503') {
+      return res.status(409).json({
+        error: 'Cannot delete product as it is referenced in sales records',
+        code: 'PRODUCT_IN_USE'
+      });
+    }
+    
     res.status(500).json({ error: 'Failed to delete product' });
   }
 };
