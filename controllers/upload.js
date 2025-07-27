@@ -17,7 +17,56 @@ const upload = multer({
   },
 });
 
-export const uploadMiddleware = upload.single('image');
+export const uploadMiddleware = (req, res, next) => {
+  console.log('📤 Upload middleware called:', {
+    method: req.method,
+    url: req.url,
+    contentType: req.headers['content-type'],
+    hasFile: !!req.file,
+    bodyKeys: Object.keys(req.body || {}),
+    userAgent: req.headers['user-agent']?.substring(0, 100)
+  });
+
+  upload.single('image')(req, res, (err) => {
+    if (err) {
+      console.error('💥 Multer error:', {
+        message: err.message,
+        code: err.code,
+        field: err.field,
+        storageErrors: err.storageErrors
+      });
+      
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({
+          error: 'File too large',
+          details: 'Image must be smaller than 5MB',
+          code: 'FILE_TOO_LARGE'
+        });
+      } else if (err.message === 'Only image files are allowed') {
+        return res.status(400).json({
+          error: 'Invalid file type',
+          details: 'Only image files are allowed',
+          code: 'INVALID_FILE_TYPE'
+        });
+      } else {
+        return res.status(400).json({
+          error: 'Upload error',
+          details: err.message,
+          code: 'UPLOAD_ERROR'
+        });
+      }
+    }
+    
+    console.log('✅ Multer processed successfully:', {
+      hasFile: !!req.file,
+      fileName: req.file?.originalname,
+      fileSize: req.file?.size,
+      mimeType: req.file?.mimetype
+    });
+    
+    next();
+  });
+};
 
 export const uploadImage = async (req, res) => {
   try {
